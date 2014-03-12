@@ -3197,7 +3197,7 @@ sub git_get_last_activity {
 	my $most_recent = <$fd>;
 	close $fd or return;
 	if (defined $most_recent &&
-	    $most_recent =~ / (\d+) [-+][01]\d\d\d$/) {
+	    $most_recent =~ /( )(\d+) [-+][01]\d\d\d$/) {
 		my $timestamp = $1;
 		my $age = time - $timestamp;
 		return ($age, age_string($age));
@@ -3323,9 +3323,22 @@ sub parse_tag {
 	my $tag_id = shift;
 	my %tag;
 	my @comment;
+	my @signature;
+	open my $fd0, "-|", git_cmd(), "tag", "-l", "--points-at", $tag_id or return;
+	$tag{'name'} = <$fd0>;
+	close $fd0;
+	chomp $tag{'name'};
+	# die $tag{'name'};
+	# my $tmp = git_cmd() . " tag" . " -v "  .  $tag{'name'};
+	# die $tmp;
 
-	open my $fd, "-|", git_cmd(), "cat-file", "tag", $tag_id or return;
+	open my $fd, "-|", git_cmd(), "tag", "-v", $tag{'name'} or return;
 	$tag{'id'} = $tag_id;
+	
+	# my @verify = <$fd>;
+	# die <$fd>;
+	# die scalar(@verify);
+
 	while (my $line = <$fd>) {
 		chomp $line;
 		if ($line =~ m/^object ([0-9a-fA-F]{40})$/) {
@@ -3344,16 +3357,37 @@ sub parse_tag {
 			} else {
 				$tag{'author_name'} = $tag{'author'};
 			}
-		} elsif ($line =~ m/--BEGIN/) {
-			push @comment, $line;
-			last;
-		} elsif ($line eq "") {
+		} 
+		# elsif ($line =~ m/--BEGIN/) {
+		# 	push @comment, $line;
+		# 	last;
+		# } 
+		elsif (($line =~ /gpg/ | $line =~ /Primary key fingerprint/) & ($line !~ /--BEGIN/))
+		{
+			push @signature, $line;
+		}
+		elsif ($line eq "") {
 			last;
 		}
 	}
 	push @comment, <$fd>;
+
+	# die scalar(@signature);
+
+	### retrieving tag signature
+	open my $fd0, "-|", git_cmd(), "verify-tag", $tag{'name'};
+	while (my $sig = <$fd0>)
+	{
+		# die $sig;
+		push @comment, $sig;
+	}
+	close $fd0;
+	### retrieving tag signature
+
+
 	$tag{'comment'} = \@comment;
-	close $fd or return;
+	close $fd;
+
 	if (!defined $tag{'name'}) {
 		return
 	};
@@ -3362,21 +3396,25 @@ sub parse_tag {
 
 sub parse_commit_text {
 	my ($commit_text, $withparents) = @_;
+	# die $commit_text;
 	my @commit_lines = split '\n', $commit_text;
 	my %co;
+	my @signature = ();
 
-	pop @commit_lines; # Remove '\0'
+	pop @commit_lines if ($commit_lines[-1] eq "\0"); # Remove '\0'
 
 	if (! @commit_lines) {
 		return;
 	}
 
 	my $header = shift @commit_lines;
+	# die $header;
 	if ($header !~ m/^[0-9a-fA-F]{40}/) {
 		return;
 	}
 	($co{'id'}, my @parents) = split ' ', $header;
 	while (my $line = shift @commit_lines) {
+		# die $line if ($line =~ /gpg/);
 		last if $line eq "\n";
 		if ($line =~ m/^tree ([0-9a-fA-F]{40})$/) {
 			$co{'tree'} = $1;
@@ -3403,7 +3441,12 @@ sub parse_commit_text {
 				$co{'committer_name'} = $co{'committer'};
 			}
 		}
+		elsif (($line =~ /gpg/) & ($line !~ /--BEGIN/))
+		{
+			push @signature, $line;
+		}
 	}
+	# die scalar(@signature);
 	if (!defined $co{'tree'}) {
 		return;
 	};
@@ -3411,6 +3454,7 @@ sub parse_commit_text {
 	$co{'parent'} = $parents[0];
 
 	foreach my $title (@commit_lines) {
+		# die $title if ($title =~ /gpg/);
 		$title =~ s/^    //;
 		if ($title ne "") {
 			$co{'title'} = chop_str($title, 80, 5);
@@ -3442,6 +3486,12 @@ sub parse_commit_text {
 	foreach my $line (@commit_lines) {
 		$line =~ s/^    //;
 	}
+	push(@commit_lines, "") if(scalar(@signature) > 0);
+	foreach my $sig (@signature)
+	{
+		push(@commit_lines, $sig);
+		# die $sig;
+	}
 	$co{'comment'} = \@commit_lines;
 
 	my $age = time - $co{'committer_epoch'};
@@ -3463,16 +3513,45 @@ sub parse_commit {
 	my %co;
 
 	local $/ = "\0";
-
-	open my $fd, "-|", git_cmd(), "rev-list",
+	# my $gpg = `git_cmd() show --quiet --pretty=format:"%G?" $commit_id`;
+	$commit_id = $commit_id . "^{commit}" if ($commit_id =~ /tags/);
+	open my $fd0, "-|", git_cmd(), "show", "--quiet", "--pretty=format:\"%G?\"", $commit_id or die_error(500, "Open git-show failed");
+	my @gpg = split("\n", <$fd0>);
+	close $fd0;
+	chomp $gpg[-1];
+	# die $gpg[-1];
+	if($gpg[-1] =~ 'N')
+	{
+		# die $gpg;
+		open my $fd, "-|", git_cmd(), "rev-list",
 		"--parents",
 		"--header",
 		"--max-count=1",
 		$commit_id,
 		"--",
 		or die_error(500, "Open git-rev-list failed");
-	%co = parse_commit_text(<$fd>, 1);
-	close $fd;
+		# die <$fd>;
+		# die "N";
+		%co = parse_commit_text(<$fd>, 1);
+		close $fd;
+	}
+	else
+	{
+		open my $fd, "-|", git_cmd(), "show",
+			"--quiet",
+			"--date=raw",
+			"--pretty=format:%H %P%ntree %T%nparent %P%nauthor %an <%ae> %ad%ncommitter %cn <%ce> %cd%n%GG%n%s%n%b",
+			$commit_id,
+			"--",
+			or die_error(500, "Open git-show failed");
+			# die <$fd>;
+			# my @commit_msg = <$fd>;
+			# push (@commit_msg, );
+			# die "G";
+			%co = parse_commit_text(<$fd>, 1);
+			close $fd;
+	}
+	
 
 	return %co;
 }
@@ -3497,6 +3576,7 @@ sub parse_commits {
 		($filename ? ($filename) : ())
 		or die_error(500, "Open git-rev-list failed");
 	while (my $line = <$fd>) {
+		# die "parse_commits";
 		my %co = parse_commit_text($line);
 		push @cos, \%co;
 	}
@@ -3653,6 +3733,7 @@ sub git_get_heads_list {
 		'--format=%(objectname) %(refname) %(subject)%00%(committer)',
 		@patterns
 		or return;
+		# die <$fd>;
 	while (my $line = <$fd>) {
 		my %ref_item;
 
@@ -4498,7 +4579,14 @@ sub git_print_log {
 	# print log
 	my $skip_blank_line = 0;
 	foreach my $line (@$log) {
-		if ($line =~ m/^\s*([A-Z][-A-Za-z]*-[Bb]y|C[Cc]): /) {
+		if ($line =~ m/^gpg:(.)+Good(.)+/) {
+			if (! $opts{'-remove_signoff'}) {
+				print "<span class=\"good_sign\">" . esc_html($line) . "</span><br/>\n";
+				$skip_blank_line = 1;
+			}
+			next;
+		}
+		elsif (($line =~ m/^\s*([A-Z][-A-Za-z]*-[Bb]y|C[Cc]): /)) {
 			if (! $opts{'-remove_signoff'}) {
 				print "<span class=\"signoff\">" . esc_html($line) . "</span><br/>\n";
 				$skip_blank_line = 1;
@@ -7353,6 +7441,7 @@ sub git_log {
 }
 
 sub git_commit {
+	# die "commit";
 	$hash ||= $hash_base || "HEAD";
 	my %co = parse_commit($hash)
 	    or die_error(404, "Unknown commit object");

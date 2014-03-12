@@ -129,6 +129,22 @@ span.age {
 
 span.signoff {
 	color: #888888;
+	font-weight: bold;
+	/*background-color: #aaffaa;*/
+	/*lalala*/
+}
+
+span.good_sign {
+	/*color: #888888;*/
+	font-weight: bold;
+	background-color: #aaffaa;
+}
+
+span.bad_sign {
+	/*color: #888888;*/
+	/*background-color: #aaffaa;*/
+	font-weight: bold;
+	background-color: #ff6600;
 }
 
 div.log_link {
