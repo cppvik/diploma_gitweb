@@ -3432,7 +3432,7 @@ sub parse_commit_text {
 	my %co;
 	my @signature = ();
 
-	pop @commit_lines if ($commit_lines[-1] =~ "\0"); # Remove '\0'
+	pop @commit_lines; # Remove '\0'
 
 	if (! @commit_lines) {
 		return;
@@ -3469,8 +3469,7 @@ sub parse_commit_text {
 			} else {
 				$co{'committer_name'} = $co{'committer'};
 			}
-		}
-		elsif ($line =~ /^gpg: /) {
+		} elsif ($line =~ /^gpg: /) {
 			push @signature, $line;
 		}
 	}
@@ -3513,9 +3512,7 @@ sub parse_commit_text {
 		$line =~ s/^    //;
 	}
 	push(@commit_lines, "") if scalar @signature;
-	foreach my $sig (@signature) {
-		push(@commit_lines, $sig);
-	}
+	push @commit_lines, @signature;
 	$co{'comment'} = \@commit_lines;
 
 	my $age = time - $co{'committer_epoch'};
@@ -3541,7 +3538,7 @@ sub parse_commit {
 	open my $fd, "-|", git_cmd(), "show",
 		"--quiet",
 		"--date=raw",
-		"--pretty=format:%H %P%ntree %T%nparent %P%nauthor %an <%ae> %ad%ncommitter %cn <%ce> %cd%n%GG%n%s%n%n%b",
+		"--pretty=format:%H %P%ntree %T%nparent %P%nauthor %an <%ae> %ad%ncommitter %cn <%ce> %cd%n%GG%n%s%n%n%b%x00",
 		$commit_id,
 		"--",
 		or die_error(500, "Open git-show failed");
