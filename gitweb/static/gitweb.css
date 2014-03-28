@@ -32,6 +32,11 @@ img.avatar {
 	vertical-align: middle;
 }
 
+img.blob {
+	max-height: 100%;
+	max-width: 100%;
+}
+
 a.list img.avatar {
 	border-style: none;
 }
@@ -129,22 +134,17 @@ span.age {
 
 span.signoff {
 	color: #888888;
-	font-weight: bold;
-	/*background-color: #aaffaa;*/
-	/*lalala*/
 }
 
 span.good_sign {
-	/*color: #888888;*/
 	font-weight: bold;
 	background-color: #aaffaa;
 }
 
 span.bad_sign {
-	/*color: #888888;*/
-	/*background-color: #aaffaa;*/
 	font-weight: bold;
-	background-color: #ff6600;
+	background-color: #880000;
+	color: #ffffff
 }
 
 div.log_link {
